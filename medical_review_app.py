@@ -4,6 +4,7 @@
 필요 패키지: pip install streamlit pandas openpyxl plotly
 """
 
+import io
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -112,6 +113,10 @@ def parse_excel(file_bytes, sheet_name=None):
     엑셀 파일을 파싱하여 요약(summary) 딕셔너리와
     상세(detail) DataFrame을 반환한다.
     """
+    # bytes → BytesIO 변환 (Streamlit uploader는 bytes를 반환)
+    if isinstance(file_bytes, (bytes, bytearray)):
+        file_bytes = io.BytesIO(file_bytes)
+
     xl = pd.ExcelFile(file_bytes)
     sheets = xl.sheet_names
 
@@ -119,6 +124,7 @@ def parse_excel(file_bytes, sheet_name=None):
         sheet_name = sheets[0]
 
     # ── 원시 데이터 전체 읽기 ──
+    file_bytes.seek(0)
     raw = pd.read_excel(file_bytes, sheet_name=sheet_name, header=None)
 
     # ── 요약 테이블 (상단 8행) ──
@@ -301,7 +307,8 @@ all_data = {}   # {파일명: (summary, detail)}
 
 for uf in uploaded:
     try:
-        sheets, sheet_name, summary, detail = parse_excel(uf.read(), sheet_name=None)
+        file_bytes = io.BytesIO(uf.read())
+        sheets, sheet_name, summary, detail = parse_excel(file_bytes, sheet_name=None)
         label = uf.name.replace(".xlsx", "").replace(".xls", "")
         all_data[label] = (summary, detail)
     except Exception as e:
