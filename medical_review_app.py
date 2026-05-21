@@ -6,6 +6,7 @@
 
 import io
 import streamlit as st
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -389,8 +390,7 @@ with tabs[0]:
 
     def render_summary_table(df_sub, 형태명):
         rows = df_sub[df_sub["형태"] == 형태명].copy()
-        rows["삭감액"] = pd.to_numeric(rows["삭감액"], errors='coerce')
-        rows["청구금액"] = pd.to_numeric(rows["청구금액"], errors='coerce')
+        rows["삭감률(%)"] = (rows["삭감액"] / rows["청구금액"].replace(0, np.nan) * 100).round(2)
         display = rows[["보험자", "건수", "청구금액", "삭감액", "삭감률(%)",
                          "심사결정금액", "재심금액", "불능보류건수", "불능보류금액"]].copy()
 
