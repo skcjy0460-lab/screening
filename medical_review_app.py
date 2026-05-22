@@ -61,6 +61,44 @@ def fmt_won(v):
     except Exception:
         return "-"
 
+def fmt_korean(v):
+    """금액을 한국식 단위로 표기 (억/천만/만 단위)"""
+    try:
+        n = int(v)
+        if n == 0:
+            return "0 원"
+        sign = ""
+        if n < 0:
+            sign = "-"
+            n = abs(n)
+        억 = n // 100000000
+        천만 = (n % 100000000) // 10000000
+        백만 = (n % 10000000) // 1000000
+        십만 = (n % 1000000) // 100000
+        만 = (n % 100000) // 10000
+        천 = (n % 10000) // 1000
+
+        parts = []
+        if 억:
+            parts.append(f"{억}억")
+        # 억 이하 만 단위
+        만_value = (n % 100000000) // 10000
+        if 만_value:
+            # 천단위 구분: 예) 8,060만
+            if 만_value >= 1000:
+                parts.append(f"{만_value:,}만")
+            else:
+                parts.append(f"{만_value}만")
+        # 만 이하 천 단위
+        천_value = (n % 10000) // 1000
+        if 천_value and not 억:  # 억 이상이면 천 단위 생략
+            parts.append(f"{천_value}천")
+
+        result = " ".join(parts) if parts else "0"
+        return sign + result + " 원"
+    except Exception:
+        return "-"
+
 def fmt_pct(v, d=2):
     try:
         return f"{v:.{d}f}%"
@@ -394,17 +432,17 @@ with tabs[0]:
                         f"외래 {int(외래_소계['건수']):,} / 입원 {int(입원_소계['건수']):,}"),
                     unsafe_allow_html=True)
     with c2:
-        st.markdown(kpi("총 청구금액", f"{total_청구/1e6:.1f}백만",
+        st.markdown(kpi("총 청구금액", fmt_korean(total_청구),
                         fmt_won(total_청구)), unsafe_allow_html=True)
     with c3:
-        st.markdown(kpi("총 삭감액", f"{total_삭감/1e6:.2f}백만",
+        st.markdown(kpi("총 삭감액", fmt_korean(total_삭감),
                         fmt_won(total_삭감), cls=삭감_cls), unsafe_allow_html=True)
     with c4:
         st.markdown(kpi("삭감률", fmt_pct(total_삭감률),
                         f"기준 {삭감률_임계값}% 이상 경고", cls=삭감_cls),
                     unsafe_allow_html=True)
     with c5:
-        st.markdown(kpi("불능·보류 금액", f"{total_불능/1e6:.2f}백만",
+        st.markdown(kpi("불능·보류 금액", fmt_korean(total_불능),
                         fmt_won(total_불능),
                         cls="warning" if total_불능 > 0 else ""),
                     unsafe_allow_html=True)
