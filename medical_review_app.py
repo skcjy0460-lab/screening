@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore")
 
 # ── 페이지 설정 ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="청구심사 월간결산 대시보드",
+    page_title="청구심사 종합 분석 대시보드",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -287,7 +287,11 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="dashboard-header">
-  <h1>🏥 청구심사 월간결산 분석 대시보드</h1>
+  <h1>🏥 청구심사 종합 분석 대시보드
+    <span style="font-size:0.65rem;font-weight:400;opacity:0.75;margin-left:18px;vertical-align:middle;">
+      제작자 : 주식회사 메디엄 조정윤
+    </span>
+  </h1>
   <p>병원 개원·경영 컨설팅 | 보험청구 심사결과 비교·분석 보고서</p>
 </div>
 """, unsafe_allow_html=True)
@@ -809,7 +813,7 @@ with tabs[4]:
 st.markdown("---")
 st.markdown(
     "<div style='text-align:center;color:#b0b8c1;font-size:0.8rem'>"
-    "🏥 병원 개원·경영 컨설팅 청구심사 분석 대시보드 | Powered by Streamlit + Plotly"
+    "🏥 청구심사 종합 분석 대시보드 | 제작자 : 주식회사 메디엄 조정윤 | Powered by Streamlit + Plotly"
     "</div>",
     unsafe_allow_html=True,
 )
