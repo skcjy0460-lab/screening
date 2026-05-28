@@ -48,6 +48,20 @@ st.markdown("""
         font-size: 1.05rem; font-weight: 700; color: #1e3a5f;
         border-bottom: 2px solid #2e6da4; padding-bottom: 6px; margin: 28px 0 16px;
     }
+    .insight-grid {
+        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px; margin: 10px 0 18px;
+    }
+    .insight-card {
+        background: white; border: 1px solid #e7edf3; border-radius: 10px;
+        padding: 14px 16px; box-shadow: 0 1px 5px rgba(30,58,95,0.06);
+    }
+    .insight-label { font-size: 0.78rem; color: #6b7c8f; font-weight: 700; }
+    .insight-value { font-size: 1.25rem; color: #1e3a5f; font-weight: 800; margin-top: 4px; }
+    .insight-note { font-size: 0.8rem; color: #7f8c8d; margin-top: 3px; }
+    @media (max-width: 900px) {
+        .insight-grid { grid-template-columns: 1fr; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -116,6 +130,28 @@ def fmt_acct(v):
         return f"{n:,}"
     except Exception:
         return "-"
+
+def apply_chart_style(fig, title=None, height=360):
+    fig.update_layout(
+        title=title,
+        template="plotly_white",
+        height=height,
+        font=dict(family="Arial, sans-serif", size=12, color="#263847"),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(t=50 if title else 28, b=30, l=20, r=20),
+        legend=dict(orientation="h", y=-0.18),
+    )
+    return fig
+
+def insight_card(label, value, note=""):
+    return (
+        '<div class="insight-card">'
+        f'<div class="insight-label">{label}</div>'
+        f'<div class="insight-value">{value}</div>'
+        f'<div class="insight-note">{note}</div>'
+        '</div>'
+    )
 
 def parse_date(v):
     """접수일자를 YYYY-MM-DD 로 통일"""
@@ -449,6 +485,79 @@ with tabs[0]:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    st.markdown('<div class="section-title">📌 한눈에 보는 손실·리스크 지도</div>', unsafe_allow_html=True)
+    sub_summary = summary[summary["보험자"] != "소계"].copy() if not summary.empty else pd.DataFrame()
+    if not sub_summary.empty:
+        sub_summary["구분"] = sub_summary["형태"] + " · " + sub_summary["보험자"]
+        sub_summary["삭감률(%)"] = sub_summary.apply(
+            lambda r: round(r["삭감액"] / r["청구금액"] * 100, 2) if r["청구금액"] > 0 else 0.0,
+            axis=1
+        )
+        top_loss = sub_summary.sort_values("삭감액", ascending=False).head(1).iloc[0]
+        top_rate = sub_summary[sub_summary["청구금액"] > 0].sort_values("삭감률(%)", ascending=False).head(1)
+        top_rate_text = f"{top_rate.iloc[0]['구분']} {top_rate.iloc[0]['삭감률(%)']:.2f}%" if not top_rate.empty else "-"
+        decision_share = (total_결정 / total_청구 * 100) if total_청구 else 0
+        st.markdown(
+            '<div class="insight-grid">'
+            + insight_card("최대 삭감 발생처", str(top_loss["구분"]), f"삭감액 {fmt_korean(top_loss['삭감액'])}")
+            + insight_card("최고 삭감률 구간", top_rate_text, f"경고 기준 {삭감률_임계값:.1f}%와 비교")
+            + insight_card("심사결정 전환율", fmt_pct(decision_share), "청구액 중 심사결정액 비중")
+            + '</div>',
+            unsafe_allow_html=True
+        )
+
+    v1, v2, v3 = st.columns([1, 1.15, 1.25])
+    with v1:
+        gauge_max = max(삭감률_임계값 * 2, total_삭감률 * 1.35, 5)
+        fig_gauge = go.Figure(go.Indicator(
+            mode="gauge+number+delta",
+            value=total_삭감률,
+            number={"suffix": "%", "valueformat": ".2f"},
+            delta={"reference": 삭감률_임계값, "suffix": "%p"},
+            gauge={
+                "axis": {"range": [0, gauge_max]},
+                "bar": {"color": "#e74c3c" if total_삭감률 >= 삭감률_임계값 else "#27ae60"},
+                "steps": [
+                    {"range": [0, 삭감률_임계값], "color": "#eaf7ef"},
+                    {"range": [삭감률_임계값, gauge_max], "color": "#fdecea"},
+                ],
+                "threshold": {"line": {"color": "#c0392b", "width": 4}, "value": 삭감률_임계값},
+            }
+        ))
+        apply_chart_style(fig_gauge, "삭감률 위험 게이지", 290)
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+    with v2:
+        fig_flow = go.Figure(go.Waterfall(
+            orientation="v",
+            measure=["relative", "relative", "relative", "total"],
+            x=["청구액", "삭감", "불능·보류", "심사결정"],
+            y=[total_청구, -total_삭감, -total_불능, total_결정],
+            text=[fmt_korean(total_청구), fmt_korean(-total_삭감), fmt_korean(-total_불능), fmt_korean(total_결정)],
+            textposition="outside",
+            decreasing={"marker": {"color": "#e74c3c"}},
+            increasing={"marker": {"color": "#2e6da4"}},
+            totals={"marker": {"color": "#27ae60"}},
+        ))
+        apply_chart_style(fig_flow, "청구액이 어디서 줄어드는가", 290)
+        fig_flow.update_yaxes(title_text="금액 (원)")
+        st.plotly_chart(fig_flow, use_container_width=True)
+
+    with v3:
+        if not sub_summary.empty:
+            top_cut = sub_summary.sort_values("삭감액", ascending=True).tail(6)
+            fig_top = go.Figure(go.Bar(
+                y=top_cut["구분"],
+                x=top_cut["삭감액"],
+                orientation="h",
+                marker_color=["#e74c3c" if v >= 삭감률_임계값 else "#2e6da4" for v in top_cut["삭감률(%)"]],
+                text=[f"{fmt_korean(a)} · {r:.2f}%" for a, r in zip(top_cut["삭감액"], top_cut["삭감률(%)"])],
+                textposition="outside",
+            ))
+            apply_chart_style(fig_top, "삭감액 Top 구간", 290)
+            fig_top.update_xaxes(title_text="삭감액 (원)")
+            st.plotly_chart(fig_top, use_container_width=True)
+
     st.markdown('<div class="section-title">📋 심사결과 요약표</div>', unsafe_allow_html=True)
 
     def render_summary(형태명):
@@ -569,6 +678,68 @@ with tabs[1]:
                                   yaxis_title="금액 (원)")
             st.plotly_chart(fig_ins, use_container_width=True)
 
+            st.markdown('<div class="section-title">② 보험자별 리스크 맵</div>',
+                        unsafe_allow_html=True)
+            rm1, rm2 = st.columns(2)
+            with rm1:
+                fig_risk = go.Figure()
+                for 보험자 in grp_ins["보험자"].unique():
+                    sub_r = grp_ins[grp_ins["보험자"] == 보험자]
+                    fig_risk.add_trace(go.Scatter(
+                        x=sub_r["청구액"],
+                        y=sub_r["삭감률(%)"],
+                        mode="markers+text",
+                        name=보험자,
+                        text=sub_r["형태"],
+                        textposition="top center",
+                        marker=dict(
+                            size=(sub_r["삭감액"].clip(lower=0) / max(grp_ins["삭감액"].max(), 1) * 42 + 14),
+                            opacity=0.75,
+                            line=dict(width=1, color="white"),
+                        ),
+                        customdata=sub_r[["삭감액","심사결정액"]],
+                        hovertemplate=(
+                            "청구액 %{x:,.0f}원<br>"
+                            "삭감률 %{y:.2f}%<br>"
+                            "삭감액 %{customdata[0]:,.0f}원<br>"
+                            "심사결정액 %{customdata[1]:,.0f}원<extra></extra>"
+                        ),
+                    ))
+                fig_risk.add_hline(y=삭감률_임계값, line_dash="dash", line_color="#e74c3c",
+                                   annotation_text=f"경고 기준 {삭감률_임계값}%")
+                apply_chart_style(fig_risk, "청구액 대비 삭감률 버블맵", 360)
+                fig_risk.update_xaxes(title_text="청구액 (원)")
+                fig_risk.update_yaxes(title_text="삭감률 (%)")
+                st.plotly_chart(fig_risk, use_container_width=True)
+
+            with rm2:
+                pareto = grp_ins.sort_values("삭감액", ascending=False).copy()
+                pareto["구분"] = pareto["보험자"] + " · " + pareto["형태"]
+                total_cut = pareto["삭감액"].sum()
+                pareto["누적비중(%)"] = pareto["삭감액"].cumsum() / total_cut * 100 if total_cut else 0
+                fig_pareto = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_pareto.add_trace(go.Bar(
+                    x=pareto["구분"],
+                    y=pareto["삭감액"],
+                    name="삭감액",
+                    marker_color="#e74c3c",
+                    text=[fmt_korean(v) for v in pareto["삭감액"]],
+                    textposition="outside",
+                ), secondary_y=False)
+                fig_pareto.add_trace(go.Scatter(
+                    x=pareto["구분"],
+                    y=pareto["누적비중(%)"],
+                    name="누적 비중",
+                    mode="lines+markers+text",
+                    text=[f"{v:.0f}%" for v in pareto["누적비중(%)"]],
+                    textposition="top center",
+                    line=dict(color="#1e3a5f", width=2),
+                ), secondary_y=True)
+                apply_chart_style(fig_pareto, "삭감액 파레토", 360)
+                fig_pareto.update_yaxes(title_text="삭감액 (원)", secondary_y=False)
+                fig_pareto.update_yaxes(title_text="누적 비중 (%)", range=[0, 105], secondary_y=True)
+                st.plotly_chart(fig_pareto, use_container_width=True)
+
             # 삭감률 테이블
             disp_ins = grp_ins.copy()
             for col in ["청구액","삭감액","심사결정액","재심금액"]:
@@ -577,9 +748,9 @@ with tabs[1]:
             disp_ins["삭감률(%)"] = disp_ins["삭감률(%)"].apply(lambda v: f"{v:.2f}%")
             st.dataframe(disp_ins, use_container_width=True, hide_index=True)
 
-            # ── ② 분야별 상세 ────────────────────────────────────────────
+            # ── ③ 분야별 상세 ────────────────────────────────────────────
             if "분야" in det_f2.columns:
-                st.markdown('<div class="section-title">② 분야별 청구 / 삭감 현황</div>',
+                st.markdown('<div class="section-title">③ 분야별 청구 / 삭감 현황</div>',
                             unsafe_allow_html=True)
 
                 grp_분야 = (det_f2.groupby(["분야","형태"])
@@ -734,6 +905,48 @@ with tabs[3]:
             w1.metric("경고 건수", f"{len(warn)} 건")
             w2.metric("삭감 합계", fmt_acct(warn["삭감액"].sum()) + " 원")
             w3.metric("최대 삭감률", f"{warn['삭감률(%)'].max():.2f}%")
+
+            wc1, wc2 = st.columns(2)
+            with wc1:
+                warn_top = warn.sort_values("삭감액", ascending=True).tail(10).copy()
+                warn_top["라벨"] = warn_top.apply(
+                    lambda r: " · ".join([str(r.get(c, "")) for c in ["보험자","분야","형태"] if str(r.get(c, "")) not in ("", "nan")]),
+                    axis=1
+                )
+                fig_warn_amt = go.Figure(go.Bar(
+                    y=warn_top["라벨"],
+                    x=warn_top["삭감액"],
+                    orientation="h",
+                    marker_color="#e74c3c",
+                    text=[fmt_korean(v) for v in warn_top["삭감액"]],
+                    textposition="outside",
+                ))
+                apply_chart_style(fig_warn_amt, "경고 항목 삭감액 Top 10", 360)
+                fig_warn_amt.update_xaxes(title_text="삭감액 (원)")
+                st.plotly_chart(fig_warn_amt, use_container_width=True)
+
+            with wc2:
+                fig_warn_rate = go.Figure(go.Scatter(
+                    x=warn["청구액"],
+                    y=warn["삭감률(%)"],
+                    mode="markers",
+                    marker=dict(
+                        size=(warn["삭감액"].clip(lower=0) / max(warn["삭감액"].max(), 1) * 34 + 10),
+                        color=warn["삭감률(%)"],
+                        colorscale="Reds",
+                        showscale=True,
+                        colorbar=dict(title="삭감률"),
+                        line=dict(width=1, color="white"),
+                    ),
+                    text=warn.apply(lambda r: f"{r.get('보험자','')} · {r.get('분야','')} · {r.get('형태','')}", axis=1),
+                    hovertemplate="%{text}<br>청구액 %{x:,.0f}원<br>삭감률 %{y:.2f}%<extra></extra>",
+                ))
+                fig_warn_rate.add_hline(y=삭감률_임계값, line_dash="dash", line_color="#c0392b",
+                                        annotation_text=f"기준 {삭감률_임계값}%")
+                apply_chart_style(fig_warn_rate, "경고 항목 분포", 360)
+                fig_warn_rate.update_xaxes(title_text="청구액 (원)")
+                fig_warn_rate.update_yaxes(title_text="삭감률 (%)")
+                st.plotly_chart(fig_warn_rate, use_container_width=True)
 
             disp_warn = warn.copy()
             for col in ["청구액","삭감액","재심금액"]:
