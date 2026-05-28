@@ -528,20 +528,54 @@ with tabs[0]:
         st.plotly_chart(fig_gauge, use_container_width=True)
 
     with v2:
-        fig_flow = go.Figure(go.Waterfall(
-            orientation="v",
-            measure=["relative", "relative", "relative", "total"],
-            x=["청구액", "삭감", "불능·보류", "심사결정"],
-            y=[total_청구, -total_삭감, -total_불능, total_결정],
-            text=[fmt_korean(total_청구), fmt_korean(-total_삭감), fmt_korean(-total_불능), fmt_korean(total_결정)],
+        기타_차이 = max(total_청구 - total_결정 - total_삭감 - total_불능, 0)
+        fig_flow = go.Figure()
+        fig_flow.add_trace(go.Bar(
+            name="총 청구액",
+            x=["총 청구액", "심사 결과 구성"],
+            y=[total_청구, 0],
+            marker_color="#2e6da4",
+            text=[fmt_korean(total_청구), ""],
             textposition="outside",
-            decreasing={"marker": {"color": "#e74c3c"}},
-            increasing={"marker": {"color": "#2e6da4"}},
-            totals={"marker": {"color": "#27ae60"}},
         ))
-        apply_chart_style(fig_flow, "청구액이 어디서 줄어드는가", 290)
+        fig_flow.add_trace(go.Bar(
+            name="심사결정액",
+            x=["총 청구액", "심사 결과 구성"],
+            y=[0, total_결정],
+            marker_color="#27ae60",
+            text=["", fmt_korean(total_결정)],
+            textposition="inside",
+        ))
+        fig_flow.add_trace(go.Bar(
+            name="삭감액",
+            x=["총 청구액", "심사 결과 구성"],
+            y=[0, total_삭감],
+            marker_color="#e74c3c",
+            text=["", fmt_korean(total_삭감)],
+            textposition="inside",
+        ))
+        fig_flow.add_trace(go.Bar(
+            name="불능·보류액",
+            x=["총 청구액", "심사 결과 구성"],
+            y=[0, total_불능],
+            marker_color="#e67e22",
+            text=["", fmt_korean(total_불능) if total_불능 else ""],
+            textposition="inside",
+        ))
+        if 기타_차이 > 0:
+            fig_flow.add_trace(go.Bar(
+                name="기타 차이",
+                x=["총 청구액", "심사 결과 구성"],
+                y=[0, 기타_차이],
+                marker_color="#95a5a6",
+                text=["", fmt_korean(기타_차이)],
+                textposition="inside",
+            ))
+        apply_chart_style(fig_flow, "청구액 대비 심사 결과 구성", 290)
+        fig_flow.update_layout(barmode="stack", legend=dict(orientation="h", y=-0.25))
         fig_flow.update_yaxes(title_text="금액 (원)")
         st.plotly_chart(fig_flow, use_container_width=True)
+        st.caption("왼쪽은 전체 청구액, 오른쪽은 심사결정·삭감·불능보류로 나누어 본 결과입니다.")
 
     with v3:
         if not sub_summary.empty:
